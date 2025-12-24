@@ -1,7 +1,7 @@
 name: Build iOS IPA
 
 on:
-  push: 
+  push:  
     branches: [ main ]
   pull_request:
     branches: [ main ]
@@ -17,12 +17,12 @@ jobs:
     
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
-      with: 
-        xcode-version: latest-stable
+      with:  
+        xcode-version:  latest-stable
     
     - name: Import Certificate
       env:
-        P12_CERTIFICATE: ${{ secrets. P12_CERTIFICATE }}
+        P12_CERTIFICATE: ${{ secrets.P12_CERTIFICATE }}
         P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
         # 创建临时 keychain
@@ -42,8 +42,8 @@ jobs:
         security set-key-partition-list -S apple-tool:,apple:  -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
     
     - name: Import Provisioning Profile
-      env: 
-        MOBILEPROVISION: ${{ secrets.MOBILEPROVISION }}
+      env:  
+        MOBILEPROVISION: ${{ secrets. MOBILEPROVISION }}
       run: |
         # 创建 provisioning profile 目录
         mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
@@ -59,23 +59,27 @@ jobs:
     - name: Build Archive
       run: |
         xcodebuild -project CameraAccess.xcodeproj \
-          -scheme CameraAccess \
+          -scheme TurboMeta \
           -configuration Release \
-          -archivePath $RUNNER_TEMP/CameraAccess.xcarchive \
-          archive
+          -archivePath $RUNNER_TEMP/TurboMeta.xcarchive \
+          archive \
+          CODE_SIGN_STYLE=Manual \
+          DEVELOPMENT_TEAM=YOUR_TEAM_ID
     
     - name: Export IPA
       run: |
         # 创建 ExportOptions. plist
         cat > $RUNNER_TEMP/ExportOptions.plist <<EOF
-        <? xml version="1.0" encoding="UTF-8"?>
-        <! DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
         <dict>
           <key>method</key>
           <string>ad-hoc</string>
           <key>teamID</key>
           <string>YOUR_TEAM_ID</string>
+          <key>signingStyle</key>
+          <string>manual</string>
           <key>compileBitcode</key>
           <false/>
           <key>stripSwiftSymbols</key>
@@ -85,13 +89,22 @@ jobs:
         EOF
         
         xcodebuild -exportArchive \
-          -archivePath $RUNNER_TEMP/CameraAccess.xcarchive \
+          -archivePath $RUNNER_TEMP/TurboMeta.xcarchive \
           -exportPath $RUNNER_TEMP/export \
           -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist
     
     - name: Upload IPA
       uses: actions/upload-artifact@v4
       with:
-        name:  CameraAccess-IPA
+        name:  TurboMeta-IPA
         path: ${{ runner.temp }}/export/*. ipa
         retention-days: 30
+    
+    - name: Display Download Instructions
+      run: |
+        echo "✅ IPA 构建成功！"
+        echo "📱 下载方法："
+        echo "1. 进入 GitHub Actions 页面"
+        echo "2. 点击这次运行的工作流"
+        echo "3. 在页面底部的 Artifacts 区域下载 TurboMeta-IPA"
+        echo "4. 解压后使用 iTunes、Xcode 或其他工具安装到您的 iPhone"
