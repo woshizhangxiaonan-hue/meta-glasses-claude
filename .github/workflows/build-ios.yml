@@ -1,237 +1,120 @@
-nameCERTIFICATE }}
-        P12_PASSWORD: ${{ secrets.P12_: Build iOS IPA
+name: Build iOS IPA
 
-on: PASSWORD }}
-      run: |
+on:  
   push:   
-    branches
-        KEYCHAIN_PATH=$: [ main ]
-  pull_RUNNER_TEMP/app-signing.keychain-db
-        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-        
-        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-        security set-keychain-settings -lut 21600 "$request: 
     branches: [ main ]
-  workflow_dispatch:  
+  pull_request:  
+    branches: [ main ]
+  workflow_dispatch:   
 
 jobs:
-  build: 
+  build:  
     runs-on: macos-latest
     
-    steps: 
+    steps:  
     - name: Checkout repository
       uses: actions/checkout@v4
     
     - name: Setup Xcode
-      usesKEYCHAIN_PATH"
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-        
-        CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-        echo -n "$P12: maxim-lobanov/setup-xcode@v1
+      uses: maxim-lobanov/setup-xcode@v1
       with:   
-        xcode-version:  latest-stable
+        xcode-version: latest-stable
     
     - name: Import Certificate
       env:  
         P12_CERTIFICATE:  ${{ secrets.P12_CERTIFICATE }}
-        P12_PASSWORD: ${{ secrets.P12__CERTIFICATE" | base64 --decode -o "$CERTIFICATE_PATH"
-        security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -tPASSWORD }}
+        P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-        # 创建临时 keychain
-        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing. keychain-db
         KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
         
-        # 创建  cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        
+        CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+        echo -n "$P12_CERTIFICATE" | base64 --decode -o "$CERTIFICATE_PATH"
+        security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
         security list-keychain -d user -s "$KEYCHAIN_PATH"
         security set-key-partition-list -S apple-tool:,apple:  -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
     
     - name: Import Provisioning Profile
       env:  
-        MOBILEPkeychain
-        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-        
-        # 导入证书
-        CERTIFICATE_PATH=$RUNNER_TEMP/certificate. ROVISION: ${{ secrets. MOBILEPROVISION }}
+        MOBILEPROVISION:  ${{ secrets.MOBILEPROVISION }}
       run: |
-        mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+        PP_PATH=~/Library/MobileDevice/Provisioning\ Profiles
+        mkdir -p "$PP_PATH"
         
-        PROVISION_PATH=$RUNNER_TEMP/profile. mobileprovision
-        echo -n "$MOBILEPROVISION" | base64 --decode > "$PROVISION_PATH"
+        PROVISION_PATH=$RUNNER_TEMP/profile.mobileprovision
+        echo -n "$MOBILEPROVISION" | base64 --decode --output "$PROVISION_PATH"
         
-        # 检p12
-        echo -n "$查文P12_CERTIFICATE" | base件是否成64 --decode -o "$功创CERTIFICATE_PATH"
-        security import建
-        if [ !  "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -f "$PROVISION_PATH" -t cert -f pkcs12 ]; then
-          echo "Error: Faile -k "$KEYCHAIN_PATH"
-        security list-keyd to create provisioning profile"
+        if [ !  -f "$PROVISION_PATH" ]; then
+          echo "Error: Provisioning profile not created"
           exit 1
         fi
         
-        #chain -d user -s "$ 显KEYCHAIN_PATH"
-        security set-key-partition-list -示文件大S apple-tool:,apple: 小
-        ls -s -k "$KEYCHAIN -l_PASSWORD" "$KEYCHAIN_PATH"
-    
-    - nameh "$PROVISION_PATH"
-        
-        #: Import Provisioning Profile
-      env:  提取 UUID（ 
-        MOBILEPROVISION使: ${{ secrets.MOBILEP用不ROVISION }}
-      run: |
-        # 创建 provisioning profile 目录
-        PP同的方法）
-        UUID=$(grep_PATH= -a -~/Library/MobileDevice/A 1Provisioning\ Profiles
-        mkdir ' -p "$PP_PATH"UUID
-        
-        # 导入描述文件
-        PROVISION_' "$PROVISION_PATH" | grepPATH=$RUNNER_TEMP/ -oprofile.mobileprovision
-         'echo -n "$MOBILEPROV[-ISION" | base64 --decode --A-Z0-9]\{output "$PROVISION_PATH"36
-        
-        # 验证文件
-        if\}' | head -1)
-         [ ! 
-        if [ -z "$UUID" -f "$PROVISION_PATH" ]; then
-          echo "Warning: Coul ]; then
-          echo "Errord not extract: Provisioning profile not created" UUID using grep,
-          exit 1
-        fi trying
-        
-        # 获 P取 UUID
-        UUID=$(/listBuddy..."
-          UUID=$(securityusr/libexec/PlistBuddy -c "Print :  cms -D -i "$PROVISIONUUID" /dev/stdin <_PATH" | plutil -extract UUID<< $(security cms -D -i "$ xmlPROVISION_PATH"))
-        echo "1 -Provisioning Profile UUID: $UUID"o
-        
-        # 复制到 - -系 | sed -统目录
-        cp "$PROVISION_n 's/.*PATH" "$PP_PATH/$<stringUUID.mobileprovision"
-        
-        # 验证复制成>\(.*\)<\/string>.功
-        ls*/\1/p')
-         -la "$PP_PATH"
-        
-        # 显示 Bundle ID
-        echo "Application Identifier:"fi
-        
-        if [ -z "$UUID" ]; then
-          echo "Error: Failed to extract UUID from provisioning profile"
-          exit 1
-        fi
-        
+        UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i "$PROVISION_PATH"))
         echo "Provisioning Profile UUID: $UUID"
         
-        # 复制到正确位置
-        cp "$PROVISION_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/${UUID}.mobileprovision
+        cp "$PROVISION_PATH" "$PP_PATH/$UUID.mobileprovision"
         
-        # 验
-        security cms -D -i "$PROVISION_PATH" | /usr/libexec/PlistBuddy -c "Print : Ent证文件已itlements: 复application制
-        ls-identifier" -la /dev/stdin
-     ~/Library/MobileDevice/Provisioning\ Profiles/
+        ls -la "$PP_PATH"
+        
+        echo "Application Identifier:"
+        security cms -D -i "$PROVISION_PATH" | /usr/libexec/PlistBuddy -c "Print : Entitlements: application-identifier" /dev/stdin
+    
     - name: Build Archive
-        
-        # 提取并
       run: |
-        xcodebuild -project CameraAccess显示 Bundle ID
-        echo "Bundle ID in provisioning profile:".xcodeproj \
+        xcodebuild -project CameraAccess.xcodeproj \
           -scheme TurboMeta \
-        security cms -D -i "$PROVISION_PATH" | grep
           -configuration Release \
-          -archivePath $RUNNER_ -A 2 "application-identifier"TEMP/TurboMeta ||.xcarchive \
-          - echo "Couldestination 'generic/platform=iOSd not extract' \
+          -archivePath $RUNNER_TEMP/TurboMeta. xcarchive \
+          -destination 'generic/platform=iOS' \
           archive \
-           bundleCODE_SIGN_STYLE=Manual \
-          DEVELOPMENT_ ID"
+          CODE_SIGN_STYLE=Manual \
+          DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+          PRODUCT_BUNDLE_IDENTIFIER=tg.tgquS476. tool7 \
+          PROVISIONING_PROFILE_SPECIFIER="8a6baa6e-e182-4230-81d0-4d4ad08bb063"
     
-    - nameTEAM=XHTH2G: Build Archive
-      run: |7Q5Y \
-          
-        xcodebuild -projectPRODUCT_BUNDLE_IDENTIFIER= CameraAccess.xcodeprtg.tgquS476oj \
-          -scheme Tur.tool7 \
-          boMeta \
-          -configurationPROVISIONING_PROFILE_SPEC Release \
-          -archivePathIFIER="8a6baa6 $RUNNER_TEMP/Te-e182-4230-urboMeta.xcarchive81d0-4d4a \
-          -destination 'genericd08bb063"
-    
-    /platform=iOS' \
-          - name: Export IPA
-      archive \
-          CODE_SIGNrun: |
-        cat > $_STYLE=Manual \
-          RUNNER_TEMP/ExportDEVELOPMENT_TEAM=XOptions.plist <<'EOF'HTH2G7Q5Y
-        <?xml version="1. \
-          PRODUCT_BUNDLE0" encoding="UTF-8"?>
-        <! _IDENTIFIER=tg.tgquS476.tool7DOCTYPE plist PUBLIC "-//Apple//
-    
-    - name: Export IDTD PLIST 1.PA
+    - name: Export IPA
       run: |
-        0//EN" "http://wwwcat > $RUNNER_TEMP.apple.com/DTDs//ExportOptions.plist PropertyList-1.0.dt<<'EOF'
-        <?xml versiond">
-        <plist version="1.0" encoding="UTF="1.0">
-        -8"?>
-        <! <dict>
-          <key>methoDOCTYPE plist PUBLIC "-//Apple//d</key>
-          <string>DTD PLIST 1.ad-hoc</string>0//EN" "http://www
-          <key>teamID</key.apple.com/DTDs/>
-          <string>XPropertyList-1.0.dtHTH2G7Q5Yd">
-        <plist version</string>
-          <key>="1.0">
-        signingStyle</key>
-          <dict>
-          <key>metho<string>manual</string>d</key>
-          <string>
-          <key>provisioningProad-hoc</string>files</key>
-          <dict
+        cat > $RUNNER_TEMP/ExportOptions.plist <<'EOF'
+        <? xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>method</key>
+          <string>ad-hoc</string>
           <key>teamID</key>
-            <key>tg.tgquS476.tool7</key>
-            <string>
           <string>YOUR_TEAM_ID</string>
-          <key>>8a6baa6esigningStyle</key>
-          -e182-4230-81<string>manual</string>d0-4d4ad08
-          <key>provisioningProbb063</string>
-          files</key>
-          <dict</dict>
-          <key>compil>
-            <key>tgeBitcode</key>
-          .tgquS476.tool<false/>
-          <key>7</key>
-            <stringstripSwiftSymbols</key>
-          <true/>
-        >8a6baa6e-e182-4230-81</dict>
-        </plistd0-4d4ad08>
-        EOF
-        
-        bb063</string>
-          xcodebuild -exportArchive</dict>
-          <key>compil \
-          -archivePath $eBitcode</key>
-          RUNNER_TEMP/Tur<false/>
-          <key>boMeta.xcarchive \
-          -exportPath $RUNNERstripSwiftSymbols</key>
-          <true/>
-        _TEMP/export \
+          <key>signingStyle</key>
+          <string>manual</string>
+          <key>provisioningProfiles</key>
+          <dict>
+            <key>tg.tgquS476.tool7</key>
+            <string>8a6baa6e-e182-4230-81d0-4d4ad08bb063</string>
           </dict>
-        </plist-exportOptionsPlist $RUNNER>
+          <key>compileBitcode</key>
+          <false/>
+          <key>stripSwiftSymbols</key>
+          <true/>
+        </dict>
+        </plist>
         EOF
         
-        _TEMP/ExportOptions. plist
-    
-    - name: Upload IPA
-      uses: xcodebuild -exportArchive \
+        xcodebuild -exportArchive \
           -archivePath $RUNNER_TEMP/TurboMeta.xcarchive \
           -exportPath $RUNNER_TEMP/export \
-          -exportOptionsPlist $RUNNER_TEMP/ExportOptions. plist
+          -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist
     
     - name: Upload IPA
-      uses:  actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4
       with:
         name:  TurboMeta-IPA
-        path: ${{ runner. temp }}/export/*. ipa
-        retention-days:  actions/upload-artifact@v4
-      with:
-        name:  TurboMeta-IPA
-        path: ${{ runner. temp }}/export/*. ipa
-        retention-days:  30
+        path: ${{ runner.temp }}/export/*. ipa
+        retention-days: 30
     
     - name: Display Download Instructions
-      run:  |
+      run: |
         echo "✅ IPA 构建成功！"
         echo "📱 下载地址:  https://github.com/woshizhangxiaonan-hue/meta-glasses-claude/actions"
