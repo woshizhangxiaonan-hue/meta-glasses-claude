@@ -23,7 +23,6 @@ jobs:
         P12_CERTIFICATE: ${{ secrets.P12_CERTIFICATE }}
         P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-        # 修正：去掉了空格
         KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
         KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
@@ -45,14 +44,12 @@ jobs:
         PP_PATH="$HOME/Library/MobileDevice/Provisioning Profiles"
         mkdir -p "$PP_PATH"
 
-        # 修正：去掉了空格
         PROVISION_PATH=$RUNNER_TEMP/profile.mobileprovision
         echo "$MOBILEPROVISION" | base64 -d > "$PROVISION_PATH"
 
         UUID=$(security cms -D -i "$PROVISION_PATH" | plutil -extract UUID raw -)
         echo "Provisioning Profile UUID: $UUID"
 
-        # 修正：去掉了空格
         cp "$PROVISION_PATH" "$PP_PATH/$UUID.mobileprovision"
 
         echo "Installed provisioning profiles:"
@@ -60,7 +57,8 @@ jobs:
 
     - name: Build Archive
       run: |
-        # 修正：Bundle ID 去掉了空格
+        # 修正1：Bundle ID 改为 tg.tgqq5476.tool7 (修正了 quS 的拼写错误)
+        # 修正2：添加 CODE_SIGN_IDENTITY="Apple Distribution" 强制使用发布证书
         xcodebuild -project CameraAccess.xcodeproj \
           -scheme TurboMeta \
           -configuration Release \
@@ -68,12 +66,14 @@ jobs:
           -destination 'generic/platform=iOS' \
           archive \
           CODE_SIGN_STYLE=Manual \
+          CODE_SIGN_IDENTITY="Apple Distribution" \
           DEVELOPMENT_TEAM=YOUR_TEAM_ID \
-          PRODUCT_BUNDLE_IDENTIFIER=tg.tgquS476.tool7 \
+          PRODUCT_BUNDLE_IDENTIFIER=tg.tgqq5476.tool7 \
           PROVISIONING_PROFILE_SPECIFIER="8a6baa6e-e182-4230-81d0-4d4ad08bb063"
 
     - name: Export IPA
       run: |
+        # 修正3：同步修正 plist 中的 Bundle ID
         cat > $RUNNER_TEMP/ExportOptions.plist <<'EOF'
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -87,7 +87,7 @@ jobs:
           <string>manual</string>
           <key>provisioningProfiles</key>
           <dict>
-            <key>tg.tgquS476.tool7</key>
+            <key>tg.tgqq5476.tool7</key>
             <string>8a6baa6e-e182-4230-81d0-4d4ad08bb063</string>
           </dict>
           <key>compileBitcode</key>
