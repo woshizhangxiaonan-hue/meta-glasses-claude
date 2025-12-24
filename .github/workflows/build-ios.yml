@@ -3,13 +3,13 @@ name: Build iOS IPA
 on: 
   push: 
     branches: [ main ]
-  workflow_dispatch:  
+  workflow_dispatch: 
 
 jobs:
-  build: 
+  build:
     runs-on: macos-latest
     
-    steps: 
+    steps:
     - name: Checkout repository
       uses: actions/checkout@v4
     
@@ -23,7 +23,7 @@ jobs:
         P12_CERTIFICATE:  ${{ secrets.P12_CERTIFICATE }}
         P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing. keychain-db
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
         KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
         
         security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -68,31 +68,31 @@ jobs:
           PRODUCT_BUNDLE_IDENTIFIER=tg. tgquS476.tool7 \
           PROVISIONING_PROFILE_SPECIFIER="8a6baa6e-e182-4230-81d0-4d4ad08bb063"
     
-    - name: Export IPA
+    - name:  Export IPA
       run: |
         cat > $RUNNER_TEMP/ExportOptions.plist <<'EOF'
-<? xml version="1.0" encoding="UTF-8"?>
-<! DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>teamID</key>
-  <string>YOUR_TEAM_ID</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>tg.tgquS476.tool7</key>
-    <string>8a6baa6e-e182-4230-81d0-4d4ad08bb063</string>
-  </dict>
-  <key>compileBitcode</key>
-  <false/>
-  <key>stripSwiftSymbols</key>
-  <true/>
-</dict>
-</plist>
-EOF
+        <? xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>method</key>
+          <string>ad-hoc</string>
+          <key>teamID</key>
+          <string>YOUR_TEAM_ID</string>
+          <key>signingStyle</key>
+          <string>manual</string>
+          <key>provisioningProfiles</key>
+          <dict>
+            <key>tg.tgquS476.tool7</key>
+            <string>8a6baa6e-e182-4230-81d0-4d4ad08bb063</string>
+          </dict>
+          <key>compileBitcode</key>
+          <false/>
+          <key>stripSwiftSymbols</key>
+          <true/>
+        </dict>
+        </plist>
+        EOF
         
         xcodebuild -exportArchive \
           -archivePath $RUNNER_TEMP/TurboMeta.xcarchive \
@@ -103,10 +103,10 @@ EOF
       uses: actions/upload-artifact@v4
       with: 
         name:  TurboMeta-IPA
-        path: ${{ runner. temp }}/export/*. ipa
-        retention-days:  30
+        path: ${{ runner. temp }}/export/*.ipa
+        retention-days: 30
     
     - name: Display Download Instructions
-      run:  |
+      run: |
         echo "✅ IPA 构建成功！"
         echo "📱 下载地址:  https://github.com/woshizhangxiaonan-hue/meta-glasses-claude/actions"
