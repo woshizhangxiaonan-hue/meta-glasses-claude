@@ -64,6 +64,10 @@
 	<!-- End required section for Device Access Toolkit Apps -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>TurboMeta 需要访问麦克风以实现与智能眼镜的实时语音对话功能。</string>
+
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>TurboMeta 需要语音识别权限来与 AI 进行对话。</string>
+
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>TurboMeta 需要访问相册以保存从智能眼镜拍摄的照片。</string>
 	<key>UIApplicationSceneManifest</key>
