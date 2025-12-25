@@ -187,30 +187,44 @@ class OmniRealtimeService: NSObject {
 
     // MARK: - Audio Recording
 
+// MARK: - Audio Recording
+
     func startRecording() {
         guard !isRecording else { return }
 
         do {
-            print("🎤 [Omni] 准备开始录音...")
+            print("🎤 [Omni] 准备配置音频会话...")
 
-            // 1. 配置 AudioSession
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+            
+            // ✅ 关键修复 1: 使用 .videoChat 模式，比 .voiceChat 更温和，适合有视频流的场景
+            // ✅ 关键修复 2: 添加 .mixWithOthers，允许与 Meta SDK 的音频共存，不强行打断
+            // ✅ 关键修复 3: allowBluetooth 即使在 videoChat 模式下也是需要的，确保走蓝牙麦克风
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .videoChat, 
+                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
+            )
+            
+            // 激活会话
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            print("✅ [Omni] 音频会话已激活")
 
-            // 2. 获取 InputNode
             let inputNode = audioEngine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             
-            // 3. 安全清理旧 Tap
+            // ✅ 关键修复 4: 安全检查，如果硬件被占用导致采样率为0，避免崩溃
+            if inputFormat.sampleRate == 0 {
+                print("❌ [Omni] 麦克风采样率为 0，可能被 Meta SDK 独占，无法录音")
+                onError?("音频硬件不可用")
+                return
+            }
+            
             inputNode.removeTap(onBus: 0)
-
-            // 4. 安装 Tap
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
                 self?.processAudioBuffer(buffer)
             }
 
-            // 5. 启动
             ensureEngineRunning()
 
             isRecording = true
@@ -218,10 +232,9 @@ class OmniRealtimeService: NSObject {
 
         } catch {
             print("❌ [Omni] 启动录音失败: \(error.localizedDescription)")
-            onError?("Failed to start recording: \(error.localizedDescription)")
+            onError?("无法启动录音: \(error.localizedDescription)")
         }
     }
-
     func stopRecording() {
         guard isRecording else { return }
         print("🛑 [Omni] 停止录音")
