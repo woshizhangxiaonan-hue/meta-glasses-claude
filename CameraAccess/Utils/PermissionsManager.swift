@@ -71,7 +71,7 @@ class PermissionsManager: ObservableObject {
 
     // MARK: - 麦克风权限
 
-    private func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
+    func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
 
         switch status {
