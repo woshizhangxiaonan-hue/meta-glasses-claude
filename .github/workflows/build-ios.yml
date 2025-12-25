@@ -67,6 +67,7 @@ jobs:
           archive \
           CODE_SIGN_STYLE=Manual \
           CODE_SIGN_IDENTITY="Apple Distribution" \
+          CODE_SIGN_ENTITLEMENTS="CameraAccess/TurboMeta.entitlements" \
           DEVELOPMENT_TEAM=YOUR_TEAM_ID \
           PRODUCT_BUNDLE_IDENTIFIER=tg.tgqq5476.tool7 \
           PROVISIONING_PROFILE_SPECIFIER="8a6baa6e-e182-4230-81d0-4d4ad08bb063"
