@@ -1,6 +1,6 @@
 /*
  * Qwen-Omni-Realtime WebSocket Service
- * 修复版：懒加载音频引擎，防止初始化时闪退
+ * 最终修复版：懒加载音频引擎 + 状态保护
  */
 
 import Foundation
@@ -57,7 +57,9 @@ class OmniRealtimeService: NSObject {
     private var audioChunkCount = 0
     private let minChunksBeforePlay = 2 
     private var hasStartedPlaying = false
-    private var isAudioGraphSetup = false // 新增标记
+    
+    // 🛡️ 关键变量：防止重复初始化
+    private var isAudioGraphSetup = false 
 
     // Callbacks
     var onTranscriptDelta: ((String) -> Void)?
@@ -79,12 +81,14 @@ class OmniRealtimeService: NSObject {
     init(apiKey: String) {
         self.apiKey = apiKey
         super.init()
-        // ❌ 删除 setupAudioGraph()，不要在 init 里做，太危险
+        // ✅ 关键修复：这里已经删除了 setupAudioGraph()
+        // 绝对不要在 init 里调用它！
     }
 
     // MARK: - Audio Engine Setup (Lazy)
 
     private func setupAudioGraph() {
+        // 🛡️ 关键保护：如果已经设置过，直接返回，防止崩溃
         guard !isAudioGraphSetup else { return }
         
         print("⚙️ [Omni] 初始化音频图...")
@@ -93,13 +97,13 @@ class OmniRealtimeService: NSObject {
         if let format = audioFormat {
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
         } else {
-            print("⚠️ [Omni] 音频格式创建失败，尝试默认格式")
+            // Fallback
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: nil)
         }
         
         do {
             audioEngine.prepare()
-            isAudioGraphSetup = true
+            isAudioGraphSetup = true // 标记已完成
             print("✅ [Omni] 音频引擎准备就绪")
         } catch {
             print("❌ [Omni] 引擎准备失败: \(error)")
@@ -121,11 +125,11 @@ class OmniRealtimeService: NSObject {
     // MARK: - WebSocket Connection
 
     func connect() {
-        // ✅ 在真正连接时才初始化音频，此时 View 的 0.5s 延迟已经生效
+        // ✅ 关键修复：在连接时才初始化音频 (延迟生效点)
         setupAudioGraph()
         
         let urlString = "\(baseURL)?model=\(model)"
-        print("🔌 [Omni] 准备连接 WebSocket: \(urlString)")
+        print("🔌 [Omni] 准备连接 WebSocket")
 
         guard let url = URL(string: urlString) else {
             onError?("Invalid URL")
@@ -141,7 +145,6 @@ class OmniRealtimeService: NSObject {
         webSocket = urlSession?.webSocketTask(with: request)
         webSocket?.resume()
 
-        print("🔌 [Omni] WebSocket 任务已启动")
         receiveMessage()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -190,19 +193,24 @@ class OmniRealtimeService: NSObject {
         do {
             print("🎤 [Omni] 准备开始录音...")
 
+            // 1. 配置 AudioSession
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
+            // 2. 获取 InputNode
             let inputNode = audioEngine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             
+            // 3. 安全清理旧 Tap
             inputNode.removeTap(onBus: 0)
 
+            // 4. 安装 Tap
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
                 self?.processAudioBuffer(buffer)
             }
 
+            // 5. 启动
             ensureEngineRunning()
 
             isRecording = true
