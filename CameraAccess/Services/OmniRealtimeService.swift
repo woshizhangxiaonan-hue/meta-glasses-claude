@@ -1,13 +1,13 @@
 /*
  * Qwen-Omni-Realtime WebSocket Service
- * 修复版：单引擎架构，彻底解决 Release 模式下的闪退
+ * 修复版：懒加载音频引擎，防止初始化时闪退
  */
 
 import Foundation
 import UIKit
 import AVFoundation
 
-// MARK: - WebSocket Events
+// MARK: - WebSocket Events (保持不变)
 enum OmniClientEvent: String {
     case sessionUpdate = "session.update"
     case inputAudioBufferAppend = "input_audio_buffer.append"
@@ -33,8 +33,6 @@ enum OmniServerEvent: String {
     case error = "error"
 }
 
-// MARK: - Service Class
-
 class OmniRealtimeService: NSObject {
 
     // WebSocket
@@ -46,19 +44,20 @@ class OmniRealtimeService: NSObject {
     private let model = "qwen3-omni-flash-realtime"
     private let baseURL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 
-    // ✅ 核心修复：只使用一个引擎
+    // Engine
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     
-    // 音频格式 (24kHz PCM16, 单声道)
+    // Audio Format: 24kHz
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)
 
-    // Audio buffer management
+    // Audio buffer
     private var audioBuffer = Data()
     private var isCollectingAudio = false
     private var audioChunkCount = 0
     private let minChunksBeforePlay = 2 
     private var hasStartedPlaying = false
+    private var isAudioGraphSetup = false // 新增标记
 
     // Callbacks
     var onTranscriptDelta: ((String) -> Void)?
@@ -80,26 +79,33 @@ class OmniRealtimeService: NSObject {
     init(apiKey: String) {
         self.apiKey = apiKey
         super.init()
-        setupAudioGraph()
+        // ❌ 删除 setupAudioGraph()，不要在 init 里做，太危险
     }
 
-    // MARK: - Audio Engine Setup (Single Graph)
+    // MARK: - Audio Engine Setup (Lazy)
 
     private func setupAudioGraph() {
-        // 1. 将 Player 节点附加到引擎
+        guard !isAudioGraphSetup else { return }
+        
+        print("⚙️ [Omni] 初始化音频图...")
         audioEngine.attach(playerNode)
         
-        // 2. 连接 Player 到主混音器
         if let format = audioFormat {
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
+        } else {
+            print("⚠️ [Omni] 音频格式创建失败，尝试默认格式")
+            audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: nil)
         }
         
-        // 3. 预先准备引擎
-        audioEngine.prepare()
-        print("✅ [Omni] 音频图构建完成 (单引擎模式)")
+        do {
+            audioEngine.prepare()
+            isAudioGraphSetup = true
+            print("✅ [Omni] 音频引擎准备就绪")
+        } catch {
+            print("❌ [Omni] 引擎准备失败: \(error)")
+        }
     }
     
-    // 确保引擎正在运行
     private func ensureEngineRunning() {
         if !audioEngine.isRunning {
             do {
@@ -115,8 +121,11 @@ class OmniRealtimeService: NSObject {
     // MARK: - WebSocket Connection
 
     func connect() {
+        // ✅ 在真正连接时才初始化音频，此时 View 的 0.5s 延迟已经生效
+        setupAudioGraph()
+        
         let urlString = "\(baseURL)?model=\(model)"
-        print("🔌 [Omni] 准备连接 WebSocket")
+        print("🔌 [Omni] 准备连接 WebSocket: \(urlString)")
 
         guard let url = URL(string: urlString) else {
             onError?("Invalid URL")
@@ -132,6 +141,7 @@ class OmniRealtimeService: NSObject {
         webSocket = urlSession?.webSocketTask(with: request)
         webSocket?.resume()
 
+        print("🔌 [Omni] WebSocket 任务已启动")
         receiveMessage()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -140,6 +150,7 @@ class OmniRealtimeService: NSObject {
     }
 
     func disconnect() {
+        print("🔌 [Omni] 断开连接")
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         stopRecording()
@@ -179,24 +190,19 @@ class OmniRealtimeService: NSObject {
         do {
             print("🎤 [Omni] 准备开始录音...")
 
-            // 1. 配置 AudioSession
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
-            // 2. 获取 InputNode
             let inputNode = audioEngine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             
-            // 3. 移除旧的 Tap
             inputNode.removeTap(onBus: 0)
 
-            // 4. 安装新的 Tap
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
                 self?.processAudioBuffer(buffer)
             }
 
-            // 5. 启动引擎
             ensureEngineRunning()
 
             isRecording = true
