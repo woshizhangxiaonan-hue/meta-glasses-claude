@@ -89,36 +89,52 @@ struct LiveAIView: View {
                 }
             }
         }
-        .onAppear {
-            // 只有设备连接时才启动功能
-            guard streamViewModel.hasActiveDevice else {
-                print("⚠️ LiveAIView: 未连接RayBan Meta眼镜，跳过启动")
+       .onAppear {
+    // 1. 基础检查
+    guard streamViewModel.hasActiveDevice else { return }
+
+    // 2. 🛡️ 权限检查 + 延迟启动 (解决 Release 模式闪退的核心)
+    PermissionsManager.shared.requestMicrophonePermission { granted in
+        DispatchQueue.main.async {
+            guard granted else {
+                viewModel.errorMessage = "请在设置中允许麦克风权限"
+                viewModel.showError = true
                 return
             }
-
-            // 启动视频流
+            
+            // 3. 启动任务
             Task {
-                print("🎥 LiveAIView: 启动视频流")
+                // A. 启动视频
                 await streamViewModel.handleStartStreaming()
+                
+                // B. ⏰ 关键延迟：给系统 0.5 秒时间初始化视频引擎，避免和音频引擎撞车
+                try? await Task.sleep(nanoseconds: 500_000_000) 
+                
+                // C. 连接 AI (内部启动音频引擎)
+                await MainActor.run {
+                    viewModel.connect()
+                }
+                
+                // D. ⏰ 二次延迟：等待 WebSocket 连接成功
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                
+                // E. 只有在连接成功后才开启录音
+                await MainActor.run {
+                    if viewModel.isConnected {
+                        viewModel.startRecording()
+                    }
+                }
             }
-
-            // 自动连接并开始录音
-            viewModel.connect()
-
-            // 更新视频帧
+            
+            // 4. UI 刷新定时器
             Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
                 if let frame = streamViewModel.currentVideoFrame {
                     viewModel.updateVideoFrame(frame)
                 }
             }
-
-            // 延迟启动录音，等待连接完成
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                if viewModel.isConnected {
-                    viewModel.startRecording()
-                }
-            }
         }
+    }
+}
         .onDisappear {
             // 停止 AI 对话和视频流
             print("🎥 LiveAIView: 停止 AI 对话和视频流")
