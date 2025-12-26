@@ -1,6 +1,6 @@
 /*
  * Qwen-Omni-Realtime WebSocket Service
- * 终极稳定版：兼容 Meta SDK 音频流，解决麦克风调用失败
+ * 终极完美版：集成实时重采样 (Resampling)，解决无文字/识别失败问题
  */
 
 import Foundation
@@ -44,18 +44,20 @@ class OmniRealtimeService: NSObject {
     private let model = "qwen3-omni-flash-realtime"
     private let baseURL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 
-    // Engine (单引擎架构)
+    // Engine
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     
-    // 目标格式 (24k) - 用于发送给 AI
-    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)
+    // ✅ 关键：音频转换器 (Resampler)
+    private var audioConverter: AVAudioConverter?
+    // ✅ 关键：AI 需要的固定格式 (24k PCM16)
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)!
 
     // Audio buffer
     private var audioBuffer = Data()
     private var isCollectingAudio = false
     private var audioChunkCount = 0
-    private let minChunksBeforePlay = 3 // 稍微增加缓冲以防卡顿
+    private let minChunksBeforePlay = 3
     private var hasStartedPlaying = false
     private var isAudioGraphSetup = false
 
@@ -79,10 +81,9 @@ class OmniRealtimeService: NSObject {
     init(apiKey: String) {
         self.apiKey = apiKey
         super.init()
-        // ⚠️ Init 时不初始化硬件，防止抢占
     }
 
-    // MARK: - Audio Engine Setup (Lazy)
+    // MARK: - Audio Engine Setup
 
     private func setupAudioGraph() {
         guard !isAudioGraphSetup else { return }
@@ -90,7 +91,7 @@ class OmniRealtimeService: NSObject {
         print("⚙️ [Omni] 初始化音频图...")
         audioEngine.attach(playerNode)
         
-        // 连接播放器到主混音器 (使用默认格式)
+        // 播放链路：连接到 Mixer，让系统处理播放采样率
         let mixer = audioEngine.mainMixerNode
         let mixerFormat = mixer.outputFormat(forBus: 0)
         audioEngine.connect(playerNode, to: mixer, format: mixerFormat)
@@ -111,7 +112,6 @@ class OmniRealtimeService: NSObject {
                 print("▶️ [Omni] 音频引擎已启动")
             } catch {
                 print("❌ [Omni] 引擎启动失败: \(error)")
-                // 不抛出 fatal error，尝试继续
             }
         }
     }
@@ -119,7 +119,6 @@ class OmniRealtimeService: NSObject {
     // MARK: - WebSocket Connection
 
     func connect() {
-        // 连接时才初始化音频
         setupAudioGraph()
         
         let urlString = "\(baseURL)?model=\(model)"
@@ -168,7 +167,7 @@ class OmniRealtimeService: NSObject {
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm24",
                 "smooth_output": true,
-                "instructions": "你是RayBan Meta智能眼镜AI助手。",
+                "instructions": "你是RayBan Meta智能眼镜AI助手。请简练回答。",
                 "turn_detection": [
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -179,58 +178,54 @@ class OmniRealtimeService: NSObject {
         sendEvent(sessionConfig)
     }
 
-    // MARK: - Audio Recording (核心修复)
+    // MARK: - Audio Recording
 
     func startRecording() {
         guard !isRecording else { return }
 
-        print("🎤 [Omni] 准备录音配置...")
+        print("🎤 [Omni] 准备启动录音...")
 
-        // 1. 卑微地配置 AudioSession
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            // 使用 .default 模式兼容性最好
-            // 必须加 .mixWithOthers 以允许和 Meta SDK 共存
+            // 保持兼容模式
             try audioSession.setCategory(
                 .playAndRecord,
-                mode: .default, 
+                mode: .default,
                 options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
             )
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("✅ [Omni] AudioSession 配置成功")
         } catch {
-            print("⚠️ [Omni] AudioSession 配置受限 (可能被 Meta 占用): \(error.localizedDescription)")
-            // 即使配置失败也继续，因为 Session 可能已经是激活状态
+            print("⚠️ [Omni] Session配置受限: \(error.localizedDescription)")
         }
 
-        // 2. 获取 Input Node
         let inputNode = audioEngine.inputNode
-        // 关键修改：使用 inputFormat 而不是 outputFormat，更能反映硬件真实状态
-        let inputFormat = inputNode.inputFormat(forBus: 0)
-        
-        print("🎤 [Omni] 麦克风格式: \(inputFormat)")
+        let inputFormat = inputNode.inputFormat(forBus: 0) // 获取硬件真实格式
+        print("🎤 [Omni] 硬件采样率: \(inputFormat.sampleRate)Hz, 通道: \(inputFormat.channelCount)")
 
-        // 3. 熔断保护
         if inputFormat.sampleRate < 8000 {
             print("❌ [Omni] 采样率异常，无法录音")
-            // 这里不弹窗，只打印 log，避免 UI 干扰
             return
         }
         
-        // 4. 清理旧 Tap
+        // ✅ 关键：初始化转换器 (Hardware Format -> 24k PCM16)
+        // 这样无论眼镜是 16k 还是 48k，发给 AI 的永远是标准的 24k
+        audioConverter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        if audioConverter == nil {
+            print("❌ [Omni] 无法创建音频转换器！")
+            return
+        }
+        
         inputNode.removeTap(onBus: 0)
         
-        // 5. 安装 Tap
-        // 关键修改：bufferSize 设为 4096，这是蓝牙音频的标准 buffer
+        // 使用硬件格式安装 Tap
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
             self?.processAudioBuffer(buffer)
         }
 
-        // 6. 启动引擎
         ensureEngineRunning()
 
         isRecording = true
-        print("✅ [Omni] 录音已启动")
+        print("✅ [Omni] 录音已启动 (重采样已激活)")
     }
 
     func stopRecording() {
@@ -241,38 +236,53 @@ class OmniRealtimeService: NSObject {
         }
         isRecording = false
         hasAudioBeenSent = false
+        audioConverter = nil // 释放转换器
     }
 
+    // ✅ 核心修复：带重采样的处理函数
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let floatChannelData = buffer.floatChannelData else { return }
-
-        let frameLength = Int(buffer.frameLength)
-        let channel = floatChannelData.pointee
-
-        // 简单重采样：直接转 Int16
-        // 注意：如果硬件采样率不是 24k，这里会导致音调偏移，但在兼容模式下这是最稳的方案
-        var int16Data = [Int16](repeating: 0, count: frameLength)
-        for i in 0..<frameLength {
-            let sample = channel[i]
-            let clampedSample = max(-1.0, min(1.0, sample))
-            int16Data[i] = Int16(clampedSample * 32767.0)
+        guard let converter = audioConverter else { return }
+        
+        // 1. 计算输出需要的帧数
+        // 比例 = 目标采样率 / 输入采样率
+        let inputCallback: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
         }
+        
+        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else { return }
+        
+        // 2. 执行转换 (Resample + Format Convert)
+        var error: NSError? = nil
+        let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputCallback)
+        
+        if status == .error || error != nil {
+            print("❌ [Omni] 转换失败: \(String(describing: error))")
+            return
+        }
+        
+        // 3. 提取 PCM16 数据并发送
+        if outputBuffer.frameLength > 0, let channelData = outputBuffer.int16ChannelData {
+            let dataLength = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+            let data = Data(bytes: channelData[0], count: dataLength)
+            
+            let base64Audio = data.base64EncodedString()
+            sendAudioAppend(base64Audio)
 
-        let data = Data(bytes: int16Data, count: frameLength * MemoryLayout<Int16>.size)
-        let base64Audio = data.base64EncodedString()
-
-        sendAudioAppend(base64Audio)
-
-        if !hasAudioBeenSent {
-            hasAudioBeenSent = true
-            print("✅ [Omni] 音频数据流已发送")
-            DispatchQueue.main.async { [weak self] in
-                self?.onFirstAudioSent?()
+            if !hasAudioBeenSent {
+                hasAudioBeenSent = true
+                print("✅ [Omni] 首帧重采样音频已发送")
+                DispatchQueue.main.async { [weak self] in
+                    self?.onFirstAudioSent?()
+                }
             }
         }
     }
 
-    // MARK: - Send Events
+    // MARK: - Send Events (保持不变)
     private func sendEvent(_ event: [String: Any]) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: event),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
@@ -409,6 +419,7 @@ class OmniRealtimeService: NSObject {
     }
 
     private func playAudioBuffer(_ audioData: Data) {
+        // AI 返回的音频也是 24k PCM16，直接播放
         guard let pcmBuffer = createPCMBuffer(from: audioData, format: targetFormat) else { return }
         playerNode.scheduleBuffer(pcmBuffer)
     }
