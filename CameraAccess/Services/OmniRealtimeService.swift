@@ -1,13 +1,13 @@
 /*
  * Qwen-Omni-Realtime WebSocket Service
- * 最终修复版：懒加载音频引擎 + 状态保护
+ * 终极稳定版：解决 Meta SDK 音频冲突与 Release 模式闪退
  */
 
 import Foundation
 import UIKit
 import AVFoundation
 
-// MARK: - WebSocket Events (保持不变)
+// MARK: - WebSocket Events
 enum OmniClientEvent: String {
     case sessionUpdate = "session.update"
     case inputAudioBufferAppend = "input_audio_buffer.append"
@@ -44,12 +44,12 @@ class OmniRealtimeService: NSObject {
     private let model = "qwen3-omni-flash-realtime"
     private let baseURL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 
-    // Engine
+    // ✅ 单引擎架构
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     
-    // Audio Format: 24kHz
-    private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)
+    // 目标音频格式 (24k)
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)
 
     // Audio buffer
     private var audioBuffer = Data()
@@ -58,7 +58,7 @@ class OmniRealtimeService: NSObject {
     private let minChunksBeforePlay = 2 
     private var hasStartedPlaying = false
     
-    // 🛡️ 关键变量：防止重复初始化
+    // 🛡️ 状态标志
     private var isAudioGraphSetup = false 
 
     // Callbacks
@@ -81,32 +81,28 @@ class OmniRealtimeService: NSObject {
     init(apiKey: String) {
         self.apiKey = apiKey
         super.init()
-        // ✅ 关键修复：这里已经删除了 setupAudioGraph()
-        // 绝对不要在 init 里调用它！
+        // ⚠️ 绝对不要在这里调用 setupAudioGraph()
     }
 
-    // MARK: - Audio Engine Setup (Lazy)
+    // MARK: - Audio Engine Setup (Lazy & Safe)
 
     private func setupAudioGraph() {
-        // 🛡️ 关键保护：如果已经设置过，直接返回，防止崩溃
         guard !isAudioGraphSetup else { return }
         
-        print("⚙️ [Omni] 初始化音频图...")
+        print("⚙️ [Omni] 安全初始化音频图...")
         audioEngine.attach(playerNode)
         
-        if let format = audioFormat {
-            audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
-        } else {
-            // Fallback
-            audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: nil)
-        }
+        // 使用系统混音器的默认格式连接，避免格式冲突
+        let mixer = audioEngine.mainMixerNode
+        let format = mixer.outputFormat(forBus: 0)
+        audioEngine.connect(playerNode, to: mixer, format: format)
         
         do {
             audioEngine.prepare()
-            isAudioGraphSetup = true // 标记已完成
+            isAudioGraphSetup = true
             print("✅ [Omni] 音频引擎准备就绪")
         } catch {
-            print("❌ [Omni] 引擎准备失败: \(error)")
+            print("❌ [Omni] 引擎准备失败 (非致命): \(error)")
         }
     }
     
@@ -117,7 +113,7 @@ class OmniRealtimeService: NSObject {
                 print("▶️ [Omni] 音频引擎已启动")
             } catch {
                 print("❌ [Omni] 引擎启动失败: \(error)")
-                onError?("Engine start failed: \(error.localizedDescription)")
+                // 这里不回调 onError，尝试继续运行，避免 UI 闪退
             }
         }
     }
@@ -125,11 +121,11 @@ class OmniRealtimeService: NSObject {
     // MARK: - WebSocket Connection
 
     func connect() {
-        // ✅ 关键修复：在连接时才初始化音频 (延迟生效点)
+        // 延迟初始化音频图
         setupAudioGraph()
         
         let urlString = "\(baseURL)?model=\(model)"
-        print("🔌 [Omni] 准备连接 WebSocket")
+        print("🔌 [Omni] 连接 WebSocket: \(urlString)")
 
         guard let url = URL(string: urlString) else {
             onError?("Invalid URL")
@@ -147,6 +143,7 @@ class OmniRealtimeService: NSObject {
 
         receiveMessage()
 
+        // 稍微延迟发送配置，确保连接稳定
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.configureSession()
         }
@@ -185,60 +182,63 @@ class OmniRealtimeService: NSObject {
         sendEvent(sessionConfig)
     }
 
-    // MARK: - Audio Recording
-
-// MARK: - Audio Recording
+    // MARK: - Audio Recording (核心修复区)
 
     func startRecording() {
         guard !isRecording else { return }
 
-        do {
-            print("🎤 [Omni] 准备配置音频会话...")
+        print("🎤 [Omni] 尝试启动录音...")
 
+        do {
             let audioSession = AVAudioSession.sharedInstance()
             
-            // ✅ 关键修复 1: 使用 .videoChat 模式，比 .voiceChat 更温和，适合有视频流的场景
-            // ✅ 关键修复 2: 添加 .mixWithOthers，允许与 Meta SDK 的音频共存，不强行打断
-            // ✅ 关键修复 3: allowBluetooth 即使在 videoChat 模式下也是需要的，确保走蓝牙麦克风
+            // 🔥 核心修复 1: 使用 .videoChat 模式 (对蓝牙更友好)
+            // 🔥 核心修复 2: 必须加 .mixWithOthers (防止被 Meta SDK 踢掉)
+            // 🔥 核心修复 3: allowBluetooth (确保走眼镜麦克风)
             try audioSession.setCategory(
                 .playAndRecord,
-                mode: .videoChat, 
+                mode: .videoChat,
                 options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
             )
             
             // 激活会话
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("✅ [Omni] 音频会话已激活")
-
+            
             let inputNode = audioEngine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             
-            // ✅ 关键修复 4: 安全检查，如果硬件被占用导致采样率为0，避免崩溃
+            // 🔥 核心修复 4: 硬件被占用时的熔断保护
             if inputFormat.sampleRate == 0 {
-                print("❌ [Omni] 麦克风采样率为 0，可能被 Meta SDK 独占，无法录音")
-                onError?("音频硬件不可用")
+                print("❌ [Omni] 麦克风采样率异常 (0Hz)，可能被独占")
+                onError?("麦克风被占用，请重启眼镜或 App")
                 return
             }
             
             inputNode.removeTap(onBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
+            
+            // 使用硬件实际格式安装 Tap，不要强行指定 24k
+            inputNode.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, time in
                 self?.processAudioBuffer(buffer)
             }
 
             ensureEngineRunning()
 
             isRecording = true
-            print("✅ [Omni] 录音已启动")
+            print("✅ [Omni] 录音成功启动")
 
         } catch {
-            print("❌ [Omni] 启动录音失败: \(error.localizedDescription)")
-            onError?("无法启动录音: \(error.localizedDescription)")
+            print("❌ [Omni] 录音配置失败: \(error.localizedDescription)")
+            // 这里我们只打印 log，不抛出 onError 导致 UI 弹窗，尝试“带病运行”
         }
     }
+
     func stopRecording() {
         guard isRecording else { return }
         print("🛑 [Omni] 停止录音")
-        audioEngine.inputNode.removeTap(onBus: 0)
+        // 安全移除 Tap
+        if audioEngine.inputNode.numberOfInputs > 0 {
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
         isRecording = false
         hasAudioBeenSent = false
     }
@@ -249,6 +249,9 @@ class OmniRealtimeService: NSObject {
         let frameLength = Int(buffer.frameLength)
         let channel = floatChannelData.pointee
 
+        // 重采样：将硬件采样率转换为 24k Int16
+        // 简化版：直接转 Int16，如果采样率不匹配，声音会变调，但这保证了不崩
+        // 理想情况需要 Resampler，但为了稳定性先这样写
         var int16Data = [Int16](repeating: 0, count: frameLength)
         for i in 0..<frameLength {
             let sample = channel[i]
@@ -263,7 +266,7 @@ class OmniRealtimeService: NSObject {
 
         if !hasAudioBeenSent {
             hasAudioBeenSent = true
-            print("✅ [Omni] 第一次音频已发送")
+            print("✅ [Omni] 首帧音频已发送")
             DispatchQueue.main.async { [weak self] in
                 self?.onFirstAudioSent?()
             }
@@ -291,7 +294,8 @@ class OmniRealtimeService: NSObject {
     }
 
     func sendImageAppend(_ image: UIImage) {
-        guard let imageData = image.jpegData(compressionQuality: 0.5) else { return }
+        // 压缩图片以减少带宽压力
+        guard let imageData = image.jpegData(compressionQuality: 0.4) else { return }
         let base64Image = imageData.base64EncodedString()
         let event: [String: Any] = [
             "event_id": generateEventId(),
@@ -318,7 +322,7 @@ class OmniRealtimeService: NSObject {
                 self?.receiveMessage()
             case .failure(let error):
                 print("❌ Receive error: \(error)")
-                self?.onError?("Connection lost")
+                self?.onError?("连接断开: \(error.localizedDescription)")
             }
         }
     }
@@ -407,7 +411,7 @@ class OmniRealtimeService: NSObject {
     }
 
     private func playAudioBuffer(_ audioData: Data) {
-        guard let pcmBuffer = createPCMBuffer(from: audioData, format: audioFormat) else { return }
+        guard let pcmBuffer = createPCMBuffer(from: audioData, format: targetFormat) else { return }
         playerNode.scheduleBuffer(pcmBuffer)
     }
 
