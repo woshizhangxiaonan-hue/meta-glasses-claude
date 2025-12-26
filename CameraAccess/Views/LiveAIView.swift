@@ -89,52 +89,58 @@ struct LiveAIView: View {
                 }
             }
         }
-       .onAppear {
-    // 1. 基础检查
-    guard streamViewModel.hasActiveDevice else { return }
-
-    // 2. 🛡️ 权限检查 + 延迟启动 (解决 Release 模式闪退的核心)
-    PermissionsManager.shared.requestMicrophonePermission { granted in
-        DispatchQueue.main.async {
-            guard granted else {
-                viewModel.errorMessage = "请在设置中允许麦克风权限"
-                viewModel.showError = true
+.onAppear {
+            // 1. 基础检查
+            guard streamViewModel.hasActiveDevice else {
+                print("⚠️ LiveAIView: 未连接设备")
                 return
             }
-            
-            // 3. 启动任务
-            Task {
-                // A. 启动视频
-                await streamViewModel.handleStartStreaming()
-                
-                // B. ⏰ 关键延迟：给系统 0.5 秒时间初始化视频引擎，避免和音频引擎撞车
-                try? await Task.sleep(nanoseconds: 500_000_000) 
-                
-                // C. 连接 AI (内部启动音频引擎)
-                await MainActor.run {
-                    viewModel.connect()
-                }
-                
-                // D. ⏰ 二次延迟：等待 WebSocket 连接成功
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                
-                // E. 只有在连接成功后才开启录音
-                await MainActor.run {
-                    if viewModel.isConnected {
-                        viewModel.startRecording()
+
+            // 2. 权限检查
+            PermissionsManager.shared.requestMicrophonePermission { granted in
+                DispatchQueue.main.async {
+                    guard granted else {
+                        viewModel.errorMessage = "请在设置中允许麦克风权限"
+                        viewModel.showError = true
+                        return
+                    }
+                    
+                    // 3. 启动序列 (Sequence)
+                    Task {
+                        // A. 启动视频流 (这是 Meta SDK 的动作)
+                        print("🎥 启动视频流...")
+                        await streamViewModel.handleStartStreaming()
+                        
+                        // B. 强制等待 0.5s，让视频流先跑起来
+                        try? await Task.sleep(nanoseconds: 500_000_000) 
+                        
+                        // C. 连接 AI (建立 WebSocket，初始化音频引擎但不启动)
+                        print("🔌 连接 AI 服务...")
+                        await MainActor.run {
+                            viewModel.connect()
+                        }
+                        
+                        // D. 再次强制等待 1.0s (总计 1.5s)，避开 Meta SDK 的启动高峰期
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        
+                        // E. 最后才启动录音 (此时使用了 .mixWithOthers，应该安全了)
+                        await MainActor.run {
+                            if viewModel.isConnected {
+                                print("🎤 安全启动录音...")
+                                viewModel.startRecording()
+                            }
+                        }
+                    }
+                    
+                    // 4. UI 刷新
+                    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                        if let frame = streamViewModel.currentVideoFrame {
+                            viewModel.updateVideoFrame(frame)
+                        }
                     }
                 }
             }
-            
-            // 4. UI 刷新定时器
-            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-                if let frame = streamViewModel.currentVideoFrame {
-                    viewModel.updateVideoFrame(frame)
-                }
-            }
         }
-    }
-}
         .onDisappear {
             // 停止 AI 对话和视频流
             print("🎥 LiveAIView: 停止 AI 对话和视频流")
