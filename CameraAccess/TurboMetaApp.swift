@@ -19,6 +19,10 @@ import Foundation
 import MWDATCore
 import SwiftUI
 
+extension Notification.Name {
+    static let deepLinkReceived = Notification.Name("deepLinkReceived")
+}
+
 #if DEBUG
 import MWDATMockDevice
 #endif
@@ -50,6 +54,13 @@ struct TurboMetaApp: App {
       // Main app view with access to the shared Wearables SDK instance
       // The Wearables.shared singleton provides the core DAT API
       MainAppView(wearables: Wearables.shared, viewModel: wearablesViewModel)
+        .onOpenURL { url in
+          // Handle turbometa://liveai, turbometa://livestream, etc.
+          if let host = url.host {
+            TurboMetaHomeView.pendingDeepLink = host
+            NotificationCenter.default.post(name: .deepLinkReceived, object: host)
+          }
+        }
         // Show error alerts for view model failures
         .alert("Error", isPresented: $wearablesViewModel.showError) {
           Button("OK") {

@@ -4,6 +4,7 @@
  */
 
 import SwiftUI
+import Combine
 
 struct TurboMetaHomeView: View {
     @ObservedObject var streamViewModel: StreamSessionViewModel
@@ -13,6 +14,9 @@ struct TurboMetaHomeView: View {
     @State private var showLiveAI = false
     @State private var showLiveStream = false
     @State private var showLeanEat = false
+
+    /// Deep link trigger from URL scheme (turbometa://liveai)
+    static var pendingDeepLink: String?
 
     var body: some View {
         NavigationView {
@@ -104,6 +108,21 @@ struct TurboMetaHomeView: View {
                 }
             }
             .navigationBarHidden(true)
+            .onAppear { handleDeepLink() }
+            .onReceive(NotificationCenter.default.publisher(for: .deepLinkReceived)) { notification in
+                if let link = notification.object as? String {
+                    switch link {
+                    case "liveai":
+                        showLiveAI = true
+                    case "livestream":
+                        showLiveStream = true
+                    case "leaneat":
+                        showLeanEat = true
+                    default:
+                        break
+                    }
+                }
+            }
             .fullScreenCover(isPresented: $showLiveAI) {
                 LiveAIView(streamViewModel: streamViewModel, apiKey: apiKey)
             }
@@ -235,6 +254,26 @@ struct FeatureCardWide: View {
             .shadow(color: AppShadow.medium(), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - Deep Link Handler
+
+extension TurboMetaHomeView {
+    func handleDeepLink() {
+        if let link = TurboMetaHomeView.pendingDeepLink {
+            TurboMetaHomeView.pendingDeepLink = nil
+            switch link {
+            case "liveai":
+                showLiveAI = true
+            case "livestream":
+                showLiveStream = true
+            case "leaneat":
+                showLeanEat = true
+            default:
+                break
+            }
+        }
     }
 }
 

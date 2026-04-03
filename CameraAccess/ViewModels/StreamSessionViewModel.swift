@@ -66,8 +66,8 @@ class StreamSessionViewModel: ObservableObject {
     self.deviceSelector = AutoDeviceSelector(wearables: wearables)
     let config = StreamSessionConfig(
       videoCodec: VideoCodec.raw,
-      resolution: StreamingResolution.low,
-      frameRate: 24)
+      resolution: StreamingResolution.high,
+      frameRate: 30)
     streamSession = StreamSession(streamSessionConfig: config, deviceSelector: deviceSelector)
 
     // Monitor device availability
@@ -131,18 +131,24 @@ class StreamSessionViewModel: ObservableObject {
     let permission = Permission.camera
     do {
       let status = try await wearables.checkPermissionStatus(permission)
+      print("📷 [Stream] 摄像头权限状态: \(status)")
       if status == .granted {
+        print("📷 [Stream] 权限已授予，启动会话...")
         await startSession()
         return
       }
+      print("📷 [Stream] 请求摄像头权限（将跳转 Meta AI）...")
       let requestStatus = try await wearables.requestPermission(permission)
+      print("📷 [Stream] 权限请求结果: \(requestStatus)")
       if requestStatus == .granted {
         await startSession()
         return
       }
-      showError("Permission denied")
+      print("📷 [Stream] 权限被拒绝")
+      showError("摄像头权限被拒绝，请在 Meta AI 中授权")
     } catch {
-      showError("Permission error: \(error.description)")
+      print("📷 [Stream] 权限错误: \(error)")
+      showError("权限错误: \(error.localizedDescription)")
     }
   }
 

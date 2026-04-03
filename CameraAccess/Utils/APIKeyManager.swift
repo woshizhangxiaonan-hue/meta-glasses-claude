@@ -9,8 +9,8 @@ import Security
 class APIKeyManager {
     static let shared = APIKeyManager()
 
-    private let service = "com.turbometa.apikey"
-    private let account = "qwen-api-key"
+    private let service = "com.metaai.claude"
+    private let account = "claude-api-key"
 
     private init() {}
 

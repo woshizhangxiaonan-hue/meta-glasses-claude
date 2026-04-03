@@ -399,12 +399,45 @@ This project is based on Meta DAT SDK sample code and follows the original proje
 - 🔀 Fork and contribute code
 - 📢 Share with others
 
+## Comparison with Similar Projects
+
+| | TurboMeta (this) | [VisionClaw](https://github.com/Intent-Lab/VisionClaw) | [meta-glasses-gemini](https://github.com/josancamon19/meta-glasses-gemini) |
+|---|---|---|---|
+| AI Model | Qwen + Claude | Gemini Live | Gemini |
+| Chinese | Full native | English only | English only |
+| Approach | DAT SDK iOS App | DAT SDK + Gemini Live | WhatsApp Bot |
+| Camera | Direct SDK access | Direct SDK access | WhatsApp photo |
+| Voice | Real-time STT/TTS | Gemini Live | WhatsApp voice |
+| Latency | ~2-3s | ~2-3s | ~5-10s |
+| Deploy | Xcode build | Xcode build | Server deploy |
+| Nutrition | Built-in LeanEat | No | No |
+| Live Stream | Built-in | POV WebRTC | No |
+
+### WhatsApp Fallback (No Xcode Required)
+
+If you don't have Xcode or prefer a simpler setup, this project also includes a WhatsApp-based fallback:
+
+```
+Glasses → "Hey Meta, send message to Claude via WhatsApp"
+→ WhatsApp → OpenClaw Gateway (port 18789) → claude-proxy-server.js → Claude
+→ Chinese reply → WhatsApp → glasses speaker
+```
+
+See `claude-proxy-server.js` for the proxy implementation.
+
+### Lessons Learned
+
+- **spawn() must not use shell:true** — Chinese punctuation in system prompts gets parsed as shell separators. Use absolute path: `spawn('/opt/homebrew/bin/claude', args)`
+- **Claude CLI --bare flag requires API key** — Claude Pro (Max) users without API key cannot use --bare
+- **sonnet vs opus** — sonnet cuts latency from ~15s to ~6-9s with minimal quality loss for glasses use cases
+- **DAT SDK v0.3.0 → v0.5.0** — newer SDK adds Android support and better camera access
+
 ---
 
 <div align="center">
 
-**Making Smart Glasses Speak Chinese 🇨🇳**
+**Making Smart Glasses Speak Chinese**
 
-Made with ❤️ for RayBan Meta Users
+Made with care for RayBan Meta Users
 
 </div>

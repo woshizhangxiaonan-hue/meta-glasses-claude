@@ -14,6 +14,7 @@
 		4BA57AC72EF8227E002EC214 /* VisionAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57A912EF8227E002EC214 /* VisionAPIService.swift */; };
 		4BA57AC82EF8227E002EC214 /* ConversationRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57A8A2EF8227E002EC214 /* ConversationRecord.swift */; };
 		4BA57AC92EF8227E002EC214 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57A932EF8227E002EC214 /* DesignSystem.swift */; };
+		4BA57B002EF8300A002EC214 /* VideoFrameRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57AFF2EF8300A002EC214 /* VideoFrameRecorder.swift */; };
 		4BA57ACA2EF8227E002EC214 /* StatusText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57AA62EF8227E002EC214 /* StatusText.swift */; };
 		4BA57ACB2EF8227E002EC214 /* MockDeviceKitButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57AA92EF8227E002EC214 /* MockDeviceKitButton.swift */; };
 		4BA57ACC2EF8227E002EC214 /* RecordsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA57AB72EF8227E002EC214 /* RecordsView.swift */; };
@@ -97,6 +98,7 @@
 		4BA57A902EF8227E002EC214 /* VisionAPIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAPIConfig.swift; sourceTree = "<group>"; };
 		4BA57A912EF8227E002EC214 /* VisionAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAPIService.swift; sourceTree = "<group>"; };
 		4BA57A932EF8227E002EC214 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		4BA57AFF2EF8300A002EC214 /* VideoFrameRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameRecorder.swift; sourceTree = "<group>"; };
 		4BA57A952EF8227E002EC214 /* APIKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyManager.swift; sourceTree = "<group>"; };
 		4BA57A962EF8227E002EC214 /* TimeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeUtils.swift; sourceTree = "<group>"; };
 		4BA57A982EF8227E002EC214 /* MockDeviceKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockDeviceKitViewModel.swift; sourceTree = "<group>"; };
@@ -195,6 +197,7 @@
 			isa = PBXGroup;
 			children = (
 				4BA57A932EF8227E002EC214 /* DesignSystem.swift */,
+				4BA57AFF2EF8300A002EC214 /* VideoFrameRecorder.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -493,6 +496,7 @@
 				4BA57AED2EF8227E002EC214 /* TurboMetaHomeView.swift in Sources */,
 				4BA57AEE2EF8227E002EC214 /* OmniRealtimeService.swift in Sources */,
 				4BA57AEF2EF8227E002EC214 /* HomeScreenView.swift in Sources */,
+				4BA57B002EF8300A002EC214 /* VideoFrameRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -544,7 +548,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
+				DEVELOPMENT_TEAM = JDCWQ5UFNN;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
 				INFOPLIST_FILE = CameraAccess/Info.plist;
@@ -554,7 +558,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.meta.wearables.external.CameraAccess;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.stanley.metaClaude-";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -573,7 +577,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
+				DEVELOPMENT_TEAM = JDCWQ5UFNN;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = CameraAccess/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -582,7 +586,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.meta.wearables.external.CameraAccess;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.stanley.metaClaude-";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

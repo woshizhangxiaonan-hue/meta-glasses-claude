@@ -1,6 +1,6 @@
 /*
  * LeanEat Service
- * 食物营养分析AI服务
+ * 食物营养分析AI服务 - Anthropic Claude
  */
 
 import Foundation
@@ -8,8 +8,8 @@ import UIKit
 
 class LeanEatService {
     private let apiKey: String
-    private let baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    private let model = "qwen3-vl-plus"
+    private var baseURL: String { VisionAPIConfig.baseURL }
+    private let model = "claude-sonnet-4-20250514"
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -17,41 +17,53 @@ class LeanEatService {
 
     // MARK: - API Request/Response Models
 
-    struct ChatCompletionRequest: Codable {
+    struct ClaudeRequest: Encodable {
         let model: String
+        let max_tokens: Int
+        let system: String?
         let messages: [Message]
 
-        struct Message: Codable {
+        struct Message: Encodable {
             let role: String
             let content: [Content]
-
-            struct Content: Codable {
-                let type: String
-                let text: String?
-                let imageUrl: ImageURL?
-
-                enum CodingKeys: String, CodingKey {
-                    case type
-                    case text
-                    case imageUrl = "image_url"
-                }
-
-                struct ImageURL: Codable {
-                    let url: String
-                }
-            }
         }
     }
 
-    struct ChatCompletionResponse: Codable {
-        let choices: [Choice]
+    enum Content: Encodable {
+        case text(String)
+        case image(mediaType: String, data: String)
 
-        struct Choice: Codable {
-            let message: Message
-
-            struct Message: Codable {
-                let content: String
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .text(let text):
+                try container.encode("text", forKey: .type)
+                try container.encode(text, forKey: .text)
+            case .image(let mediaType, let data):
+                try container.encode("image", forKey: .type)
+                var source = container.nestedContainer(keyedBy: SourceKeys.self, forKey: .source)
+                try source.encode("base64", forKey: .type)
+                try source.encode(mediaType, forKey: .mediaType)
+                try source.encode(data, forKey: .data)
             }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type, text, source
+        }
+        enum SourceKeys: String, CodingKey {
+            case type
+            case mediaType = "media_type"
+            case data
+        }
+    }
+
+    struct ClaudeResponse: Decodable {
+        let content: [ContentBlock]
+
+        struct ContentBlock: Decodable {
+            let type: String
+            let text: String?
         }
     }
 
@@ -64,7 +76,6 @@ class LeanEatService {
         }
 
         let base64String = imageData.base64EncodedString()
-        let dataURL = "data:image/jpeg;base64,\(base64String)"
 
         // Create specialized nutrition analysis prompt
         let nutritionPrompt = """
@@ -103,23 +114,19 @@ JSON格式如下：
 请严格按照上述JSON格式返回，不要添加任何其他文字说明。
 """
 
+        let systemPrompt = "你是专业营养师AI。只返回纯JSON，不要任何额外文字、markdown标记或代码块标记。"
+
         // Create API request
-        let request = ChatCompletionRequest(
+        let request = ClaudeRequest(
             model: model,
+            max_tokens: 2048,
+            system: systemPrompt,
             messages: [
-                ChatCompletionRequest.Message(
+                ClaudeRequest.Message(
                     role: "user",
                     content: [
-                        ChatCompletionRequest.Message.Content(
-                            type: "image_url",
-                            text: nil,
-                            imageUrl: ChatCompletionRequest.Message.Content.ImageURL(url: dataURL)
-                        ),
-                        ChatCompletionRequest.Message.Content(
-                            type: "text",
-                            text: nutritionPrompt,
-                            imageUrl: nil
-                        )
+                        .image(mediaType: "image/jpeg", data: base64String),
+                        .text(nutritionPrompt)
                     ]
                 )
             ]
@@ -134,13 +141,14 @@ JSON格式如下：
 
     // MARK: - Private Methods
 
-    private func makeRequest(_ request: ChatCompletionRequest) async throws -> String {
-        let url = URL(string: "\(baseURL)/chat/completions")!
+    private func makeRequest(_ request: ClaudeRequest) async throws -> String {
+        let url = URL(string: "\(baseURL)/messages")!
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
         let encoder = JSONEncoder()
         urlRequest.httpBody = try encoder.encode(request)
@@ -157,13 +165,13 @@ JSON格式如下：
         }
 
         let decoder = JSONDecoder()
-        let apiResponse = try decoder.decode(ChatCompletionResponse.self, from: data)
+        let apiResponse = try decoder.decode(ClaudeResponse.self, from: data)
 
-        guard let firstChoice = apiResponse.choices.first else {
+        guard let firstText = apiResponse.content.first(where: { $0.type == "text" })?.text else {
             throw LeanEatError.emptyResponse
         }
 
-        return firstChoice.message.content
+        return firstText
     }
 
     private func parseNutritionResponse(_ text: String) throws -> FoodNutritionResponse {

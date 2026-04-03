@@ -1,0 +1,24 @@
+{
+  "name": "meta-glasses-claude",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">",
+  "main": "claude-proxy-server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/woshizhangxiaonan-hue/meta-glasses-claude.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/woshizhangxiaonan-hue/meta-glasses-claude/issues"
+  },
+  "homepage": "https://github.com/woshizhangxiaonan-hue/meta-glasses-claude#readme",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.87"
+  }
+}

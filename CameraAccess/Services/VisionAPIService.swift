@@ -1,6 +1,6 @@
 /*
- * Vision API Service for Alibaba Cloud Dashscope
- * Provides image recognition using Qwen3-VL-Plus model
+ * Vision API Service for Anthropic Claude
+ * Provides image recognition using Claude Sonnet model
  */
 
 import Foundation
@@ -9,8 +9,10 @@ import UIKit
 struct VisionAPIService {
     // API Configuration
     private let apiKey: String
-    private let baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    private let model = "qwen3-vl-plus"
+    private var baseURL: String { VisionAPIConfig.baseURL }
+    private let model = "claude-sonnet-4-20250514"
+
+    private let systemPrompt = "你是 Meta 智能眼镜的中文AI助手。用简洁的中文回答，像跟朋友说话一样自然。控制在3句话以内，因为回复会被语音朗读。"
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -18,41 +20,54 @@ struct VisionAPIService {
 
     // MARK: - API Request/Response Models
 
-    struct ChatCompletionRequest: Codable {
+    struct ClaudeRequest: Encodable {
         let model: String
+        let max_tokens: Int
+        let system: String?
         let messages: [Message]
 
-        struct Message: Codable {
+        struct Message: Encodable {
             let role: String
             let content: [Content]
-
-            struct Content: Codable {
-                let type: String
-                let text: String?
-                let imageUrl: ImageURL?
-
-                enum CodingKeys: String, CodingKey {
-                    case type
-                    case text
-                    case imageUrl = "image_url"
-                }
-
-                struct ImageURL: Codable {
-                    let url: String
-                }
-            }
         }
     }
 
-    struct ChatCompletionResponse: Codable {
-        let choices: [Choice]
+    // Content uses enum to handle different types cleanly
+    enum Content: Encodable {
+        case text(String)
+        case image(mediaType: String, data: String)
 
-        struct Choice: Codable {
-            let message: Message
-
-            struct Message: Codable {
-                let content: String
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .text(let text):
+                try container.encode("text", forKey: .type)
+                try container.encode(text, forKey: .text)
+            case .image(let mediaType, let data):
+                try container.encode("image", forKey: .type)
+                var source = container.nestedContainer(keyedBy: SourceKeys.self, forKey: .source)
+                try source.encode("base64", forKey: .type)
+                try source.encode(mediaType, forKey: .mediaType)
+                try source.encode(data, forKey: .data)
             }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type, text, source
+        }
+        enum SourceKeys: String, CodingKey {
+            case type
+            case mediaType = "media_type"
+            case data
+        }
+    }
+
+    struct ClaudeResponse: Decodable {
+        let content: [ContentBlock]
+
+        struct ContentBlock: Decodable {
+            let type: String
+            let text: String?
         }
     }
 
@@ -66,25 +81,18 @@ struct VisionAPIService {
         }
 
         let base64String = imageData.base64EncodedString()
-        let dataURL = "data:image/jpeg;base64,\(base64String)"
 
         // Create request
-        let request = ChatCompletionRequest(
+        let request = ClaudeRequest(
             model: model,
+            max_tokens: 1024,
+            system: systemPrompt,
             messages: [
-                ChatCompletionRequest.Message(
+                ClaudeRequest.Message(
                     role: "user",
                     content: [
-                        ChatCompletionRequest.Message.Content(
-                            type: "image_url",
-                            text: nil,
-                            imageUrl: ChatCompletionRequest.Message.Content.ImageURL(url: dataURL)
-                        ),
-                        ChatCompletionRequest.Message.Content(
-                            type: "text",
-                            text: prompt,
-                            imageUrl: nil
-                        )
+                        .image(mediaType: "image/jpeg", data: base64String),
+                        .text(prompt)
                     ]
                 )
             ]
@@ -93,22 +101,23 @@ struct VisionAPIService {
         // Make API call
         let response = try await makeRequest(request)
 
-        guard let firstChoice = response.choices.first else {
+        guard let firstText = response.content.first(where: { $0.type == "text" })?.text else {
             throw VisionAPIError.emptyResponse
         }
 
-        return firstChoice.message.content
+        return firstText
     }
 
     // MARK: - Private Methods
 
-    private func makeRequest(_ request: ChatCompletionRequest) async throws -> ChatCompletionResponse {
-        let url = URL(string: "\(baseURL)/chat/completions")!
+    private func makeRequest(_ request: ClaudeRequest) async throws -> ClaudeResponse {
+        let url = URL(string: "\(baseURL)/messages")!
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
         let encoder = JSONEncoder()
         urlRequest.httpBody = try encoder.encode(request)
@@ -125,7 +134,7 @@ struct VisionAPIService {
         }
 
         let decoder = JSONDecoder()
-        return try decoder.decode(ChatCompletionResponse.self, from: data)
+        return try decoder.decode(ClaudeResponse.self, from: data)
     }
 }
 

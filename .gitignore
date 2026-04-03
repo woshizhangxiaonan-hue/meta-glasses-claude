@@ -31,3 +31,9 @@ Carthage/Build/
 
 # macOS
 .DS_Store
+
+# Sensitive
+*.local
+*.env
+node_modules/
+*.notes.md

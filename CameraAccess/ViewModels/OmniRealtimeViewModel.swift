@@ -175,6 +175,12 @@ class OmniRealtimeViewModel: ObservableObject {
         isRecording = false
     }
 
+    // MARK: - Video Recorder
+
+    func setVideoRecorder(_ recorder: VideoFrameRecorder?) {
+        omniService.videoRecorder = recorder
+    }
+
     // MARK: - Video Frames
 
     func updateVideoFrame(_ frame: UIImage) {
