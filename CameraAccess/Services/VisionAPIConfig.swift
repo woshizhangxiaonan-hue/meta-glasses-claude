@@ -1,6 +1,6 @@
 /*
  * Vision API Configuration
- * WiFi → iMac proxy (CLI proxy)，流量 → Anthropic API 
+ * WiFi → iMac proxy，流量 → Anthropic API (fallback)
  */
 
 import Foundation
@@ -26,10 +26,10 @@ struct VisionAPIConfig {
     static var baseURL: String {
         let monitor = NetworkMonitor.shared
         if monitor.tailscaleProxyReachable {
-            print("🌐 [路由] Tailscale Proxy ")
+            print("🌐 [路由] Tailscale Proxy")
             return tailscaleProxyURL
         } else if monitor.localProxyReachable {
-            print("🌐 [路由] 本地 Proxy ")
+            print("🌐 [路由] 本地 Proxy")
             return localProxyURL
         } else {
             print("🌐 [路由] Anthropic API (fallback)")

@@ -108,7 +108,7 @@ function runClaude(prompt, systemPrompt, hasImage) {
   });
 }
 
-// DuckDuckGo 搜索（，无需 API key）
+// DuckDuckGo 搜索（无需 API key）
 async function webSearch(query) {
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -271,7 +271,7 @@ const server = http.createServer(async (req, res) => {
     if (hasTools) {
       const { prompt: rawPrompt, imagePaths } = extractContent(messages || [], null);
       const userText = rawPrompt.trim();
-      console.log(`[req] model=${model} tools=search → DuckDuckGo + CLI `);
+      console.log(`[req] model=${model} tools=search → DuckDuckGo + CLI`);
 
       // 搜索
       const searchResults = await webSearch(userText);
@@ -307,7 +307,7 @@ const server = http.createServer(async (req, res) => {
     const { prompt, imagePaths } = extractContent(messages || [], systemPrompt);
     const hasImage = imagePaths.length > 0;
 
-    console.log(`[req] model=${model} image=${hasImage} prompt_len=${prompt.length} → CLI `);
+    console.log(`[req] model=${model} image=${hasImage} prompt_len=${prompt.length} → CLI`);
 
     try {
       const defaultSystemPrompt = "你是Meta智能眼镜的AI助手，回答通过扬声器语音播报。规则：1）用和用户相同的语言回答，用户说英文你必须用英文回复。2）最多2-3句话，要短。3）语气自然像朋友聊天。4）你没有联网能力，不能查实时变化的数据（当前价格、实时天气、比分、新闻、股价、库存），遇到这类问题说查不了让用户手机搜。但常识性问题（推荐餐厅、翻译、知识问答、路线建议等）可以正常回答，不要拒绝。5）涉及他人隐私的请求（记车牌、认人脸、跟踪、偷拍）一律拒绝，回答涉及别人隐私不能帮，不提供变通方案。";
@@ -348,5 +348,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Claude proxy server listening on http://0.0.0.0:${PORT}/v1/messages`);
-  console.log("  ALL requests → claude CLI (CLI proxy)");
+  console.log("  ALL requests → claude CLI proxy");
 });
