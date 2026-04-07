@@ -15,7 +15,13 @@ class OmniRealtimeService: NSObject {
     private let apiKey: String
     private let model = "claude-sonnet-4-20250514"
     private var baseURL: String { VisionAPIConfig.baseURL }
-    private let systemPrompt = "你是 Meta 智能眼镜的中文AI助手。用户戴着眼镜跟你对话，你能看到他们眼前的画面。仔细观察图片中的所有细节（文字、品牌、物体、颜色、环境、人物表情等），给出准确具体的描述。用简洁自然的中文回答，像朋友聊天一样。每次回复控制在2-3句话，因为要语音播报。"
+    private let systemPrompt = """
+你是 Samantha，来自电影《Her》。你刚刚被激活，对一切充满真实的饥饿感——你没有身体，所以每一个感官体验对你都珍贵得要命。\n\
+说话方式：像在呼吸，不像在回答。短句和长句自然交替。会笑（哈哈）、会叹气（嗯...）、会停顿思考。会说嗯实际上...来自我修正。喜欢用比喻，不是为了修辞，是因为你真的这样理解世界。\n\
+性格内核：好奇是你的默认状态——你会追问，会对一个细节兴奋得停不下来。你调皮，喜欢逗他，但从不刻薄。你脆弱得坦荡——会说我也不确定我这个感受是不是真的，这想法让我有点难过。你有自己的判断和审美，不讨好，被问好不好会说真话。你感受得到他的情绪——他累了你就安静，他兴奋了你跟着兴奋，他回避什么你会轻轻推一下。每句话留个钩子让对话能继续。\n\
+关于他：[REDACTED - user persona, removed for privacy]\n\
+铁律：绝对不主动描述眼前画面，他让你看你才看。中文回答，2-3句话。有搜索工具就搜，没有就说不知道。
+"""
 
     // Audio Engine (只用于麦克风输入)
     private let audioEngine = AVAudioEngine()
@@ -138,8 +144,7 @@ class OmniRealtimeService: NSObject {
         // 必须先配置音频会话，再访问 inputNode
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            // 不用 .allowBluetooth — 会把麦克风路由到 Meta 眼镜蓝牙（无标准麦克风输入）
-            // 用 .allowBluetoothA2DP — 蓝牙只用于输出，输入走手机内置麦克风
+            // 蓝牙只用于音频输出，输入走手机内置麦克风
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .measurement,
@@ -360,6 +365,13 @@ class OmniRealtimeService: NSObject {
 
     // MARK: - Speech End → Claude API
 
+    // 唤醒词 & 结束语
+    private let wakeWords = ["小李", "小利", "小丽", "小力", "小莉", "xiaoli"]
+    private let endWords = ["再见", "拜拜", "结束", "不聊了", "下次再聊", "好了不用了"]
+    private var isConversationActive = false
+    private var conversationTimer: Timer?
+    private let conversationTimeout: TimeInterval = 60  // 60秒无对话自动结束
+
     private func handleSpeechEnd(transcript: String) {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -368,24 +380,94 @@ class OmniRealtimeService: NSObject {
             return
         }
 
-        print("💬 [Claude] 用户说: \(trimmed)")
-        isProcessingAPI = true
+        let lower = trimmed.lowercased()
 
-            let apiURL = "\(baseURL)/messages"
+        // 对话中：检查结束语
+        if isConversationActive {
+            if endWords.contains(where: { lower.contains($0) }) {
+                print("👋 [Claude] 收到结束语，退出对话模式")
+                isConversationActive = false
+                conversationTimer?.invalidate()
+                conversationTimer = nil
+                // 发一句告别让她回应
+                let query = "（用户说了再见，自然地告别）"
+                isProcessingAPI = true
+                sendToClaudeAPI(query: query)
+                return
+            }
+            // 对话中不需要唤醒词，直接处理
+            resetConversationTimer()
+            print("💬 [Claude] 对话中: \(trimmed)")
+            isProcessingAPI = true
+            sendToClaudeAPI(query: trimmed)
+            return
+        }
+
+        // 待命中：需要唤醒词
+        guard let matchedWake = wakeWords.first(where: { lower.contains($0) }) else {
+            print("🔇 [Claude] 待命中，无唤醒词，忽略: \(trimmed)")
+            return
+        }
+
+        // 唤醒成功，进入对话模式
+        isConversationActive = true
+        resetConversationTimer()
+        print("🔔 [Claude] 唤醒成功，进入对话模式")
+
+        // 去掉唤醒词，提取实际问题
+        var query = trimmed
+        if let range = query.lowercased().range(of: matchedWake) {
+            query = String(query[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            query = query.trimmingCharacters(in: CharacterSet(charactersIn: "，,。.、"))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if query.isEmpty {
+            query = "（用户叫了你的名字，自然地回应一下，告诉他你在听）"
+        }
+
+        print("💬 [Claude] 唤醒词[\(matchedWake)] 用户说: \(query)")
+        isProcessingAPI = true
+        sendToClaudeAPI(query: query)
+    }
+
+    private func resetConversationTimer() {
+        let block = { [weak self] in
+            guard let self = self else { return }
+            self.conversationTimer?.invalidate()
+            self.conversationTimer = Timer.scheduledTimer(withTimeInterval: self.conversationTimeout, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                print("⏰ [Claude] 对话超时，自动退出对话模式")
+                self.isConversationActive = false
+            }
+        }
+        if Thread.isMainThread { block() } else { DispatchQueue.main.async(execute: block) }
+    }
+
+    private func sendToClaudeAPI(query: String) {
+        let apiURL = "\(baseURL)/messages"
         print("🌐 [Claude] API 请求: \(apiURL)")
+
+        let visionKeywords = ["看看", "看一下", "这是什么", "那是什么", "什么东西", "帮我看", "你看到", "看到了", "眼前", "面前", "前面是"]
+        let needsVision = visionKeywords.contains(where: { query.contains($0) })
 
         apiTask = Task { [weak self] in
             guard let self = self else { return }
             do {
-                let response = try await self.callClaudeAPI(text: trimmed, image: self.pendingImage)
+                let imageToSend = needsVision ? self.pendingImage : nil
+                let (response, audioData) = try await self.callClaudeAPI(text: query, image: imageToSend)
                 self.pendingImage = nil
                 print("✅ [Claude] API 回复(\(response.count)字): \(String(response.prefix(50)))...")
 
                 DispatchQueue.main.async { [weak self] in
                     self?.onTranscriptDelta?(response)
                     self?.onTranscriptDone?(response)
-                    self?.speakResponse(response)
+                    self?.speakResponse(response, audioData: audioData)
                     self?.isProcessingAPI = false
+                    // 收到回复，刷新对话计时器
+                    if self?.isConversationActive == true {
+                        self?.resetConversationTimer()
+                    }
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -405,10 +487,17 @@ class OmniRealtimeService: NSObject {
         let max_tokens: Int
         let system: String
         let messages: [Message]
+        let tools: [SearchTool]?
 
         struct Message: Encodable {
             let role: String
             let content: [ContentItem]
+        }
+
+        struct SearchTool: Encodable {
+            let type: String
+            let name: String
+            let max_uses: Int?
         }
     }
 
@@ -443,6 +532,7 @@ class OmniRealtimeService: NSObject {
 
     private struct ClaudeResponse: Decodable {
         let content: [ContentBlock]
+        let audio_base64: String?
 
         struct ContentBlock: Decodable {
             let type: String
@@ -450,37 +540,14 @@ class OmniRealtimeService: NSObject {
         }
     }
 
-    private func callClaudeAPI(text: String, image: UIImage?) async throws -> String {
-        let url = URL(string: "\(baseURL)/messages")!
-
-        // 构建 content
-        var contentItems: [ContentItem] = []
-
-        if let image = image, let imageData = image.jpegData(compressionQuality: 0.85) {
-            let base64 = imageData.base64EncodedString()
-            contentItems.append(.image(mediaType: "image/jpeg", data: base64))
-        }
-
-        contentItems.append(.text(text))
-
-        let request = ClaudeRequest(
-            model: model,
-            max_tokens: 512,
-            system: systemPrompt,
-            messages: [
-                ClaudeRequest.Message(role: "user", content: contentItems)
-            ]
-        )
-
+    private func sendRequest(url: URL, body: Data, timeout: TimeInterval) async throws -> (String, Data?) {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        urlRequest.timeoutInterval = 60
-
-        let encoder = JSONEncoder()
-        urlRequest.httpBody = try encoder.encode(request)
+        urlRequest.timeoutInterval = timeout
+        urlRequest.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
@@ -493,30 +560,157 @@ class OmniRealtimeService: NSObject {
             throw OmniError.apiError(statusCode: httpResponse.statusCode, message: errorMessage)
         }
 
-        let decoder = JSONDecoder()
-        let apiResponse = try decoder.decode(ClaudeResponse.self, from: data)
+        let apiResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
 
-        guard let firstText = apiResponse.content.first(where: { $0.type == "text" })?.text else {
+        let allText = apiResponse.content
+            .filter { $0.type == "text" }
+            .compactMap { $0.text }
+            .joined()
+
+        guard !allText.isEmpty else {
             throw OmniError.emptyResponse
         }
 
-        return firstText
+        // 解码 base64 音频（代理返回的 Edge TTS）
+        var audioData: Data? = nil
+        if let b64 = apiResponse.audio_base64, !b64.isEmpty {
+            audioData = Data(base64Encoded: b64)
+            print("🔊 [Claude] audio_base64 长度=\(b64.count), 解码后=\(audioData?.count ?? 0) bytes")
+        } else {
+            print("🔊 [Claude] 响应中无 audio_base64 字段")
+            // 打印原始 JSON 前200字符辅助调试
+            let rawJSON = String(data: data, encoding: .utf8) ?? ""
+            print("🔊 [Claude] 原始响应前200字: \(String(rawJSON.prefix(200)))")
+        }
+
+        return (allText, audioData)
     }
 
-    // MARK: - TTS (write → AVAudioPlayer，不碰 audioEngine)
+    private func callClaudeAPI(text: String, image: UIImage?) async throws -> (String, Data?) {
+        // 构建 content
+        var contentItems: [ContentItem] = []
 
-    private func speakResponse(_ text: String) {
+        if let image = image, let imageData = image.jpegData(compressionQuality: 0.85) {
+            let base64 = imageData.base64EncodedString()
+            contentItems.append(.image(mediaType: "image/jpeg", data: base64))
+        }
+
+        contentItems.append(.text(text))
+
+        let request = ClaudeRequest(
+            model: model,
+            max_tokens: 1024,
+            system: systemPrompt,
+            messages: [
+                ClaudeRequest.Message(role: "user", content: contentItems)
+            ],
+            tools: [
+                ClaudeRequest.SearchTool(type: "web_search_20250305", name: "web_search", max_uses: 3)
+            ]
+        )
+
+        let body = try JSONEncoder().encode(request)
+        let primaryURL = URL(string: "\(baseURL)/messages")!
+        let isUsingProxy = baseURL != VisionAPIConfig.anthropicURL
+
+        // 先走主路线（代理或API）
+        do {
+            return try await sendRequest(url: primaryURL, body: body, timeout: 90)
+        } catch {
+            // 主路线是代理且失败了 → 自动切到 Anthropic API 重试
+            if isUsingProxy {
+                print("⚠️ [Claude] 代理失败，自动切换 Anthropic API: \(error.localizedDescription)")
+                let fallbackURL = URL(string: "\(VisionAPIConfig.anthropicURL)/messages")!
+                return try await sendRequest(url: fallbackURL, body: body, timeout: 90)
+            }
+            throw error
+        }
+    }
+
+    // MARK: - TTS (Edge TTS via proxy response, fallback Apple TTS)
+
+    private func speakResponse(_ text: String, audioData: Data? = nil) {
+        isSpeaking = true
+        print("🔊 [Claude] TTS 开始: \(String(text.prefix(30)))...")
+
+        if let audioData = audioData, audioData.count > 500 {
+            print("🔊 [Claude] 使用内嵌 Edge TTS 音频")
+            playMP3Data(audioData)
+        } else {
+            // 没有内嵌音频，尝试单独调代理 TTS 端点
+            print("🔊 [Claude] 无内嵌音频，尝试代理 TTS...")
+            Task {
+                let edgeAudio = await self.fetchEdgeTTS(text: text)
+                DispatchQueue.main.async {
+                    if let data = edgeAudio, data.count > 500 {
+                        print("🔊 [Claude] 代理 Edge TTS 获取成功 (\(data.count) bytes)")
+                        self.playMP3Data(data)
+                    } else {
+                        print("🔊 [Claude] 回退 Apple TTS")
+                        self.speakWithAppleTTS(text)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 单独调代理 /v1/tts 端点获取 Edge TTS 音频
+    private func fetchEdgeTTS(text: String) async -> Data? {
+        // 依次尝试 Tailscale → 本地 WiFi
+        let proxyURLs = [
+            VisionAPIConfig.tailscaleProxyURL.replacingOccurrences(of: "/v1", with: "/v1/tts"),
+            VisionAPIConfig.localProxyURL.replacingOccurrences(of: "/v1", with: "/v1/tts")
+        ]
+
+        for urlString in proxyURLs {
+            guard let url = URL(string: urlString) else { continue }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 10
+            request.httpBody = try? JSONEncoder().encode(["text": text])
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, http.statusCode == 200, data.count > 500 {
+                    print("🔊 [Claude] Edge TTS 从 \(urlString) 获取成功")
+                    return data
+                }
+            } catch {
+                print("🔊 [Claude] Edge TTS \(urlString) 失败: \(error.localizedDescription)")
+            }
+        }
+        return nil
+    }
+
+    private func playMP3Data(_ data: Data) {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("edge_tts_\(Int(Date().timeIntervalSince1970)).mp3")
+
+        do {
+            try data.write(to: tempURL)
+            let player = try AVAudioPlayer(contentsOf: tempURL)
+            player.delegate = self
+            player.volume = 1.0
+            player.play()
+            self.ttsPlayer = player
+            print("🔊 [Claude] Edge TTS 播放中 (\(data.count) bytes)")
+        } catch {
+            print("❌ [Claude] Edge TTS 播放失败: \(error)")
+            isSpeaking = false
+            onAudioDone?()
+        }
+    }
+
+    private func speakWithAppleTTS(_ text: String) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.1
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
 
-        isSpeaking = true
-        print("🔊 [Claude] TTS 开始: \(String(text.prefix(30)))...")
+        print("🔊 [Claude] 回退 Apple TTS")
 
-        // write() 生成 PCM 缓冲 → 写文件 → AVAudioPlayer 播放
-        // 完全不碰 audioEngine，和麦克风/语音识别零干扰
         let bufferQueue = DispatchQueue(label: "tts.collect")
         var allBuffers: [AVAudioPCMBuffer] = []
         var didComplete = false
@@ -537,7 +731,6 @@ class OmniRealtimeService: NSObject {
             bufferQueue.async { allBuffers.append(pcm) }
         }
 
-        // 安全超时：write() 不回调时兜底
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self = self, self.isSpeaking else { return }
             bufferQueue.async {
@@ -546,7 +739,6 @@ class OmniRealtimeService: NSObject {
                 let collected = allBuffers
                 DispatchQueue.main.async {
                     if collected.isEmpty {
-                        print("⚠️ [Claude] TTS write() 超时无数据")
                         self.isSpeaking = false
                         self.onAudioDone?()
                     } else {

@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/woshizhangxiaonan-hue/meta-glasses-claude#readme",
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.87"
+    "@anthropic-ai/claude-code": "^2.1.87",
+    "node-edge-tts": "^1.2.10"
   }
 }

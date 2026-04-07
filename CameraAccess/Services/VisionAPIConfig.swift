@@ -16,7 +16,7 @@ struct VisionAPIConfig {
     static let tailscaleProxyURL = "http://TAILSCALE_IP_REDACTED:8765/v1"
 
     // iMac proxy via local WiFi (faster when at home)
-    static let localProxyURL = "http://YOUR_LOCAL_IP:8765/v1"
+    static let localProxyURL = "http://LOCAL_IP_REDACTED:8765/v1"
 
     // Anthropic API (fallback)
     static let anthropicURL = "https://api.anthropic.com/v1"
@@ -73,7 +73,7 @@ class NetworkMonitor {
     }
 
     private func checkAllProxies() {
-        checkProxy("http://YOUR_LOCAL_IP:8765/v1/messages", timeout: 2) { [weak self] reachable in
+        checkProxy("http://LOCAL_IP_REDACTED:8765/v1/messages", timeout: 2) { [weak self] reachable in
             self?.localProxyReachable = reachable
             print("🌐 本地 Proxy: \(reachable ? "✅ 可达" : "❌ 不可达")")
         }
