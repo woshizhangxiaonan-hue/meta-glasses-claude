@@ -11,8 +11,8 @@
     "url": "git+https://github.com/woshizhangxiaonan-hue/meta-glasses-claude.git"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Stanley",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/woshizhangxiaonan-hue/meta-glasses-claude/issues"
