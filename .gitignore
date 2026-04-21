@@ -33,7 +33,5 @@ Carthage/Build/
 .DS_Store
 
 # Sensitive
-*.local
 *.env
 node_modules/
-*.notes.md
